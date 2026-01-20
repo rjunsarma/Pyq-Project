@@ -13,7 +13,7 @@ const router = express.Router();
 
 const dbDir = path.join(__dirname, "db");
 
-// ✅ ensure db directory exists (Render fix)
+// ensure db directory exists (Render-safe)
 if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
 }
@@ -21,7 +21,6 @@ if (!fs.existsSync(dbDir)) {
 const db = new sqlite3.Database(
     path.join(dbDir, "database.sqlite")
 );
-
 
 db.run(`
 CREATE TABLE IF NOT EXISTS papers (
@@ -39,10 +38,13 @@ CREATE TABLE IF NOT EXISTS papers (
    MULTER CONFIG
 ============================ */
 
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, path.join(__dirname, "uploads"));
-    },
+    destination: uploadsDir,
     filename: (req, file, cb) => {
         const uniqueName = crypto.randomUUID() + path.extname(file.originalname);
         cb(null, uniqueName);
@@ -60,7 +62,7 @@ const upload = multer({
 });
 
 /* ============================
-   USER UPLOAD ROUTE
+   USER UPLOAD (PENDING)
 ============================ */
 
 router.post("/", upload.single("paper"), (req, res) => {
@@ -71,7 +73,9 @@ router.post("/", upload.single("paper"), (req, res) => {
     }
 
     db.run(
-        `INSERT INTO papers VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO papers 
+         (id, category, subject, semester, year, filePath, approved)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
             crypto.randomUUID(),
             category,
@@ -79,9 +83,9 @@ router.post("/", upload.single("paper"), (req, res) => {
             semester,
             year,
             req.file.path,
-            0
+            0 // ✅ pending
         ],
-        (err) => {
+        err => {
             if (err) {
                 return res.status(500).json({ error: err.message });
             }
@@ -91,7 +95,89 @@ router.post("/", upload.single("paper"), (req, res) => {
 });
 
 /* ============================
-   GET APPROVED PAPERS
+   ADMIN: GET PENDING
+============================ */
+
+router.get("/pending", (req, res) => {
+    db.all(
+        "SELECT * FROM papers WHERE approved = 0",
+        [],
+        (err, rows) => {
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+            res.json(rows);
+        }
+    );
+});
+
+/* ============================
+   ADMIN: APPROVE
+============================ */
+
+router.post("/approve/:id", (req, res) => {
+    db.run(
+        "UPDATE papers SET approved = 1 WHERE id = ?",
+        [req.params.id],
+        err => {
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+            res.json({ success: true });
+        }
+    );
+});
+
+/* ============================
+   ADMIN: REJECT
+============================ */
+
+router.post("/reject/:id", (req, res) => {
+    db.run(
+        "UPDATE papers SET approved = -1 WHERE id = ?",
+        [req.params.id],
+        err => {
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
+            res.json({ success: true });
+        }
+    );
+});
+
+/* ============================
+   ADMIN: DELETE
+============================ */
+
+router.delete("/delete/:id", (req, res) => {
+    db.get(
+        "SELECT filePath FROM papers WHERE id = ?",
+        [req.params.id],
+        (err, row) => {
+            if (err || !row) {
+                return res.status(404).json({ error: "Paper not found" });
+            }
+
+            db.run(
+                "DELETE FROM papers WHERE id = ?",
+                [req.params.id],
+                err => {
+                    if (err) {
+                        return res.status(500).json({ error: err.message });
+                    }
+
+                    // delete file if exists
+                    fs.unlink(row.filePath, () => {
+                        res.json({ success: true });
+                    });
+                }
+            );
+        }
+    );
+});
+
+/* ============================
+   PUBLIC: GET APPROVED
 ============================ */
 
 router.get("/approved", (req, res) => {
