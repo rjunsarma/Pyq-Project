@@ -5,26 +5,21 @@ const container = document.getElementById("papers");
 ================================ */
 async function loadPending() {
     setActive("pending-btn");
-
-    // ✅ Update heading
     document.getElementById("admin-heading").innerText = "Pending Uploads";
 
-    const res = await fetch("http://localhost:5000/api/upload/pending");
+    const res = await fetch("/api/upload/pending");
     const data = await res.json();
     renderList(data, "pending");
 }
 
 async function loadApproved() {
     setActive("approved-btn");
-
-    // ✅ Update heading
     document.getElementById("admin-heading").innerText = "Approved Uploads";
 
-    const res = await fetch("http://localhost:5000/api/upload/approved");
+    const res = await fetch("/api/upload/approved");
     const data = await res.json();
     renderList(data, "approved");
 }
-
 
 /* ================================
    RENDER LIST
@@ -54,6 +49,7 @@ function renderList(data, mode) {
             <div class="info">
                 <p><strong>${paper.subject}</strong> (${paper.category.toUpperCase()})</p>
                 <p>Semester: ${paper.semester} | Year: ${paper.year}</p>
+                <a href="${paper.fileUrl}" target="_blank">View PDF</a>
             </div>
             <div class="actions">
                 ${actions}
@@ -68,12 +64,12 @@ function renderList(data, mode) {
    ACTIONS
 ================================ */
 async function approvePaper(id) {
-    await fetch(`http://localhost:5000/api/upload/approve/${id}`, { method: "POST" });
+    await fetch(`/api/upload/approve/${id}`, { method: "POST" });
     loadPending();
 }
 
 async function rejectPaper(id) {
-    await fetch(`http://localhost:5000/api/upload/reject/${id}`, { method: "POST" });
+    await fetch(`/api/upload/reject/${id}`, { method: "POST" });
     loadPending();
 }
 
@@ -81,10 +77,7 @@ async function deletePaper(id) {
     const ok = confirm("Delete this paper permanently?\nThis cannot be undone.");
     if (!ok) return;
 
-    await fetch(`http://localhost:5000/api/upload/delete/${id}`, {
-        method: "DELETE"
-    });
-
+    await fetch(`/api/upload/delete/${id}`, { method: "DELETE" });
     loadApproved();
 }
 
@@ -106,8 +99,4 @@ function setActive(buttonId) {
 /* ================================
    INITIAL LOAD
 ================================ */
-// Load pending WITHOUT setting active state
-fetch("http://localhost:5000/api/upload/pending")
-    .then(res => res.json())
-    .then(data => renderList(data, "pending"));
-
+loadPending();
