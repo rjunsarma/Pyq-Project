@@ -11,9 +11,17 @@ const router = express.Router();
    DATABASE SETUP
 ============================ */
 
+const dbDir = path.join(__dirname, "db");
+
+// ✅ ensure db directory exists (Render fix)
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+
 const db = new sqlite3.Database(
-    path.join(__dirname, "db", "database.sqlite")
+    path.join(dbDir, "database.sqlite")
 );
+
 
 db.run(`
 CREATE TABLE IF NOT EXISTS papers (
