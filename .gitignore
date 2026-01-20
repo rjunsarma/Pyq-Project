@@ -1,0 +1,12 @@
+# Dependencies
+backend/node_modules/
+
+# Database
+backend/db/database.sqlite
+
+# Uploaded files
+backend/uploads/
+
+# OS junk
+.DS_Store
+Thumbs.db
