@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const result = await response.json();
 
             if (!response.ok) {
-                alert(result.error || "Upload failed");
+                alert(result.error || "Upload failed. Please try again.");
                 return;
             }
 
@@ -25,8 +25,8 @@ document.addEventListener("DOMContentLoaded", () => {
             form.reset();
 
         } catch (err) {
-            alert("Unable to connect to the server. Please try again later.");
-            console.error("Upload error:", err);
+            alert("Unable to upload at the moment. Please try again later.");
+            console.error(err);
         }
     });
 
