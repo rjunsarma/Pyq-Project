@@ -20,6 +20,9 @@ app.use("/api/upload", uploadRoutes);
 // serve frontend files (HTML, CSS, JS)
 app.use(express.static(path.join(__dirname, "..")));
 
-app.listen(5000, () => {
-    console.log("Backend running on http://localhost:5000");
+// ✅ REQUIRED FOR RENDER
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+    console.log(`Backend running on port ${PORT}`);
 });
