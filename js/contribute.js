@@ -25,8 +25,8 @@ document.addEventListener("DOMContentLoaded", () => {
             form.reset();
 
         } catch (err) {
-            alert("Server not running on port 5000");
-            console.error(err);
+            alert("Unable to connect to the server. Please try again later.");
+            console.error("Upload error:", err);
         }
     });
 
