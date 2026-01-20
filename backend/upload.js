@@ -2,16 +2,19 @@ const express = require("express");
 const multer = require("multer");
 const crypto = require("crypto");
 const sqlite3 = require("sqlite3").verbose();
+const path = require("path");
 
-const supabase = require("../supabaseClient"); // adjust path if needed
+// ✅ CORRECT import (same folder)
+const supabase = require("./supabaseClient");
 
 const router = express.Router();
 
 /* ============================
-   DATABASE SETUP
+   DATABASE SETUP (RENDER SAFE)
 ============================ */
 
-const db = new sqlite3.Database("database.sqlite");
+const dbPath = path.join(__dirname, "database.sqlite");
+const db = new sqlite3.Database(dbPath);
 
 db.run(`
 CREATE TABLE IF NOT EXISTS papers (
@@ -51,18 +54,18 @@ router.post("/", upload.single("paper"), async (req, res) => {
             return res.status(400).json({ error: "No file uploaded" });
         }
 
-        const file = req.file;
         const fileName = `${crypto.randomUUID()}.pdf`;
 
-        // Upload to Supabase
+        // ✅ Upload to Supabase Storage
         const { error } = await supabase.storage
             .from("papers")
-            .upload(fileName, file.buffer, {
+            .upload(fileName, req.file.buffer, {
                 contentType: "application/pdf"
             });
 
         if (error) {
-            throw error;
+            console.error("Supabase upload error:", error);
+            return res.status(500).json({ error: "File upload failed" });
         }
 
         const { data } = supabase.storage
@@ -80,18 +83,20 @@ router.post("/", upload.single("paper"), async (req, res) => {
                 semester,
                 year,
                 data.publicUrl,
-                0 // pending
+                0
             ],
             err => {
                 if (err) {
-                    return res.status(500).json({ error: err.message });
+                    console.error("DB insert error:", err);
+                    return res.status(500).json({ error: "Database error" });
                 }
+
                 res.json({ success: true });
             }
         );
 
     } catch (err) {
-        console.error(err);
+        console.error("Upload route error:", err);
         res.status(500).json({ error: "Upload failed" });
     }
 });
@@ -101,16 +106,12 @@ router.post("/", upload.single("paper"), async (req, res) => {
 ============================ */
 
 router.get("/pending", (req, res) => {
-    db.all(
-        "SELECT * FROM papers WHERE approved = 0",
-        [],
-        (err, rows) => {
-            if (err) {
-                return res.status(500).json({ error: err.message });
-            }
-            res.json(rows);
+    db.all("SELECT * FROM papers WHERE approved = 0", [], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
         }
-    );
+        res.json(rows);
+    });
 });
 
 /* ============================
@@ -169,26 +170,22 @@ router.delete("/delete/:id", (req, res) => {
 ============================ */
 
 router.get("/approved", (req, res) => {
-    db.all(
-        "SELECT * FROM papers WHERE approved = 1",
-        [],
-        (err, rows) => {
-            if (err) {
-                return res.status(500).json({ error: err.message });
-            }
+    db.all("SELECT * FROM papers WHERE approved = 1", [], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
 
-            const formatted = rows.map(paper => ({
+        res.json(
+            rows.map(paper => ({
                 id: paper.id,
                 category: paper.category,
                 subject: paper.subject,
                 semester: paper.semester,
                 year: paper.year,
                 fileUrl: paper.fileUrl
-            }));
-
-            res.json(formatted);
-        }
-    );
+            }))
+        );
+    });
 });
 
 module.exports = router;
