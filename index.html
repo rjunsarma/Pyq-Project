@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Question Paper Hub</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+<!-- ================= HERO SECTION ================= -->
+<header class="hero">
+
+    <!-- Floating Menu -->
+    <nav class="hero-menu">
+        <a href="#" id="browse-menu">Browse</a>
+        <a href="contribute.html" target="_blank">Contribute</a>
+        <a href="#about">About</a>
+    </nav>
+
+    <!-- Background Video -->
+    <video
+        class="bg-video"
+        muted
+        loop
+        playsinline
+        preload="metadata">
+        <source src="./assets/hero-video.mp4" type="video/mp4">
+    </video>
+
+    <!-- Hero Content -->
+    <div class="hero-content">
+        <h1>PYQ</h1>
+        <p>Download previous year papers instantly</p>
+
+        <button class="hero-cta" id="browse-cta">
+            Browse Question Papers
+        </button>
+    </div>
+
+</header>
+
+<!-- ================= CATEGORY SECTION ================= -->
+<section id="categories" class="category-section hidden">
+
+    <div class="category-card" onclick="loadCategory('major')">
+        <h3>Major</h3>
+        <p>All Major papers</p>
+    </div>
+
+    <div class="category-card" onclick="loadCategory('minor')">
+        <h3>Minor</h3>
+        <p>All Minor papers</p>
+    </div>
+
+    <div class="category-card" onclick="loadCategory('sec')">
+        <h3>SEC</h3>
+        <p>Skill Enhancement Courses</p>
+    </div>
+
+    <div class="category-card" onclick="loadCategory('vac')">
+        <h3>VAC</h3>
+        <p>Value Added Courses</p>
+    </div>
+
+    <div class="category-card" onclick="loadCategory('mde')">
+        <h3>MDE</h3>
+        <p>Multidisciplinary Elective</p>
+    </div>
+
+</section>
+
+<!-- ================= SUBJECT TITLE ================= -->
+<h2 id="section-title" class="hidden"></h2>
+
+<!-- ================= SEARCH & FILTER BAR ================= -->
+<div class="filter-bar hidden" id="filter-bar">
+    <input
+        type="text"
+        id="search-input"
+        placeholder="Search subject..."
+    />
+
+    <select id="semester-filter">
+        <option value="">All Semesters</option>
+        <option value="1">Semester 1</option>
+        <option value="2">Semester 2</option>
+        <option value="3">Semester 3</option>
+        <option value="4">Semester 4</option>
+        <option value="5">Semester 5</option>
+        <option value="6">Semester 6</option>
+        <option value="7">Semester 7</option>
+        <option value="8">Semester 8</option>
+    </select>
+
+    <input
+        type="text"
+        id="year-filter"
+        placeholder="Year (e.g. 2025)"
+    />
+</div>
+
+<!-- ================= SUBJECT CONTENT ================= -->
+<main id="content" class="hidden">
+    <!-- Subject cards injected by JavaScript -->
+</main>
+
+<!-- ================= ABOUT SECTION ================= -->
+<section id="about" class="about-section">
+    <div class="about-container">
+
+        <h2>About This Platform</h2>
+
+        <p>
+            This platform is created to make access to previous year question papers
+            simple, fast, and reliable for students. Instead of searching through
+            scattered sources, all papers are organized clearly by course structure.
+        </p>
+
+        <p>
+            The aim is to support academic preparation by providing a clean and
+            distraction-free space where students can focus on what truly matters —
+            learning and practice.
+        </p>
+
+        <div class="about-highlights">
+            <div class="highlight">
+                <h4>📚 Organized</h4>
+                <p>Papers structured by Major, Minor, SEC, VAC, and MDE.</p>
+            </div>
+
+            <div class="highlight">
+                <h4>⚡ Accessible</h4>
+                <p>Works smoothly across devices with fast access.</p>
+            </div>
+
+            <div class="highlight">
+                <h4>🤝 Community Driven</h4>
+                <p>Students can contribute and help expand the collection.</p>
+            </div>
+        </div>
+
+    </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+    <p>© 2026 Question Paper Hub</p>
+</footer>
+
+<!-- ================= SCRIPT ================= -->
+<script src="js/script.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "major": {
+    "Computer Science": [
+      { "name": "Computer Science 2025", "file": "papers/major/economics/eco_2023.pdf" }
+    ],
+    "Chemistry": [],
+    
+    "Mathematics": []
+  },
+  "minor": {
+    "Mathematics": []
+  },
+  "sec": {
+    "Computer Basics": []
+  },
+  "vac": {
+    "Environmental Studies": []
+  },
+  "mde": {
+    "Digital Literacy": []
+  }
+}

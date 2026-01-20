@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin Panel | Question Paper Hub</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            background: #f5f7fb;
+            font-family: Inter, sans-serif;
+        }
+
+        .admin-container {
+            max-width: 1000px;
+            margin: 60px auto;
+            padding: 0 20px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        .paper {
+            background: white;
+            padding: 18px 20px;
+            border-radius: 14px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        }
+
+        .info p {
+            margin: 3px 0;
+            font-size: 0.9rem;
+        }
+
+        .actions button {
+            margin-left: 8px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            border: none;
+            cursor: pointer;
+        }
+
+        .approve {
+            background: #16a34a;
+            color: white;
+        }
+
+        .reject {
+            background: #dc2626;
+            color: white;
+        }
+        .delete {
+    background: #7f1d1d;
+    color: white;
+
+}
+
+/* ================================
+   ADMIN TOGGLE BUTTONS
+================================ */
+
+.admin-toggle {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 25px;
+}
+
+.admin-toggle button {
+    padding: 8px 20px;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #374151;
+    cursor: pointer;
+    transition: all 0.25s ease;
+}
+
+/* Hover effect */
+.admin-toggle button:hover {
+    background: #f3f4f6;
+}
+
+/* Active state */
+.admin-toggle button.active {
+    background: #111827;
+    color: #ffffff;
+    border-color: #111827;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+}
+
+
+    </style>
+</head>
+<body>
+<div class="admin-toggle">
+    <button id="pending-btn" onclick="loadPending()">Pending</button>
+    <button id="approved-btn" onclick="loadApproved()">Approved</button>
+</div>
+
+
+<div class="admin-container">
+    <h1 id="admin-heading">Pending Uploads</h1>
+    <div id="papers"></div>
+</div>
+
+<script src="js/admin.js"></script>
+</body>
+</html>

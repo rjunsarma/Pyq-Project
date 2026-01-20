@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Contribute Papers | Question Paper Hub</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+   <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/contribute.css">
+<script src="js/contribute.js"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+</head>
+
+<body>
+
+<header class="hero small-hero">
+    <div class="hero-content">
+        <h1>Contribute</h1>
+        <p>Help other students by uploading question papers</p>
+    </div>
+</header>
+
+<section class="contribute-section">
+<form class="contribute-form" id="upload-form"
+      method="POST"
+      enctype="multipart/form-data">
+
+
+        <label>
+            Category
+        <select name="category" required>
+
+                <option value="">Select category</option>
+                <option>Major</option>
+                <option>Minor</option>
+                <option>SEC</option>
+                <option>VAC</option>
+                <option>MDE</option>
+            </select>
+        </label>
+
+        <label>
+            Subject Name
+            <input type="text" name="subject" placeholder="e.g. Physics" required>
+        </label>
+
+        <label>
+            Year
+            <input type="text" name="year" placeholder="e.g. 2023" required>
+        </label>
+
+        <label>
+    Semester
+    <select name="semester" required>
+        <option value="">Select semester</option>
+        <option value="1">Semester 1</option>
+        <option value="2">Semester 2</option>
+        <option value="3">Semester 3</option>
+        <option value="4">Semester 4</option>
+        <option value="5">Semester 5</option>
+        <option value="6">Semester 6</option>
+        <option value="7">Semester 7</option>
+        <option value="8">Semester 8</option>
+    </select>
+</label>
+
+
+        <label>
+            Upload PDF
+          <input type="file" name="paper" accept="application/pdf" required>
+
+        </label>
+
+        <button type="submit">Submit Paper</button>
+
+        <p class="note">
+            Uploaded papers will be reviewed before being published.
+        </p>
+
+    </form>
+</section>
+
+<footer>
+    <p>© 2026 Question Paper Hub</p>
+</footer>
+<!-- ===== SUCCESS POPUP ===== -->
+<div id="success-popup" class="popup hidden">
+    <div class="popup-box">
+        <h3>✅ Successfully Uploaded</h3>
+        <p>Your paper has been submitted for review.</p>
+        <button id="close-popup">OK</button>
+    </div>
+</div>
+
+
+
+</body>
+</html>
