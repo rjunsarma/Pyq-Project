@@ -1,9 +1,9 @@
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
 const crypto = require("crypto");
 const sqlite3 = require("sqlite3").verbose();
-const fs = require("fs");
+
+const supabase = require("../supabaseClient"); // adjust path if needed
 
 const router = express.Router();
 
@@ -11,16 +11,7 @@ const router = express.Router();
    DATABASE SETUP
 ============================ */
 
-const dbDir = path.join(__dirname, "db");
-
-// ensure db directory exists (Render-safe)
-if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-}
-
-const db = new sqlite3.Database(
-    path.join(dbDir, "database.sqlite")
-);
+const db = new sqlite3.Database("database.sqlite");
 
 db.run(`
 CREATE TABLE IF NOT EXISTS papers (
@@ -29,30 +20,17 @@ CREATE TABLE IF NOT EXISTS papers (
     subject TEXT,
     semester INTEGER,
     year TEXT,
-    filePath TEXT,
+    fileUrl TEXT,
     approved INTEGER DEFAULT 0
 )
 `);
 
 /* ============================
-   MULTER CONFIG
+   MULTER CONFIG (MEMORY)
 ============================ */
 
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-    destination: uploadsDir,
-    filename: (req, file, cb) => {
-        const uniqueName = crypto.randomUUID() + path.extname(file.originalname);
-        cb(null, uniqueName);
-    }
-});
-
 const upload = multer({
-    storage,
+    storage: multer.memoryStorage(),
     fileFilter: (req, file, cb) => {
         if (file.mimetype !== "application/pdf") {
             return cb(new Error("Only PDF files allowed"));
@@ -65,33 +43,57 @@ const upload = multer({
    USER UPLOAD (PENDING)
 ============================ */
 
-router.post("/", upload.single("paper"), (req, res) => {
-    const { category, subject, semester, year } = req.body;
+router.post("/", upload.single("paper"), async (req, res) => {
+    try {
+        const { category, subject, semester, year } = req.body;
 
-    if (!req.file) {
-        return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    db.run(
-        `INSERT INTO papers 
-         (id, category, subject, semester, year, filePath, approved)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-            crypto.randomUUID(),
-            category,
-            subject,
-            semester,
-            year,
-            req.file.path,
-            0 // ✅ pending
-        ],
-        err => {
-            if (err) {
-                return res.status(500).json({ error: err.message });
-            }
-            res.json({ success: true });
+        if (!req.file) {
+            return res.status(400).json({ error: "No file uploaded" });
         }
-    );
+
+        const file = req.file;
+        const fileName = `${crypto.randomUUID()}.pdf`;
+
+        // Upload to Supabase
+        const { error } = await supabase.storage
+            .from("papers")
+            .upload(fileName, file.buffer, {
+                contentType: "application/pdf"
+            });
+
+        if (error) {
+            throw error;
+        }
+
+        const { data } = supabase.storage
+            .from("papers")
+            .getPublicUrl(fileName);
+
+        db.run(
+            `INSERT INTO papers 
+             (id, category, subject, semester, year, fileUrl, approved)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+                crypto.randomUUID(),
+                category,
+                subject,
+                semester,
+                year,
+                data.publicUrl,
+                0 // pending
+            ],
+            err => {
+                if (err) {
+                    return res.status(500).json({ error: err.message });
+                }
+                res.json({ success: true });
+            }
+        );
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Upload failed" });
+    }
 });
 
 /* ============================
@@ -150,28 +152,14 @@ router.post("/reject/:id", (req, res) => {
 ============================ */
 
 router.delete("/delete/:id", (req, res) => {
-    db.get(
-        "SELECT filePath FROM papers WHERE id = ?",
+    db.run(
+        "DELETE FROM papers WHERE id = ?",
         [req.params.id],
-        (err, row) => {
-            if (err || !row) {
-                return res.status(404).json({ error: "Paper not found" });
+        err => {
+            if (err) {
+                return res.status(500).json({ error: err.message });
             }
-
-            db.run(
-                "DELETE FROM papers WHERE id = ?",
-                [req.params.id],
-                err => {
-                    if (err) {
-                        return res.status(500).json({ error: err.message });
-                    }
-
-                    // delete file if exists
-                    fs.unlink(row.filePath, () => {
-                        res.json({ success: true });
-                    });
-                }
-            );
+            res.json({ success: true });
         }
     );
 });
@@ -195,7 +183,7 @@ router.get("/approved", (req, res) => {
                 subject: paper.subject,
                 semester: paper.semester,
                 year: paper.year,
-                fileUrl: `/uploads/${path.basename(paper.filePath)}`
+                fileUrl: paper.fileUrl
             }));
 
             res.json(formatted);
