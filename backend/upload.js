@@ -87,46 +87,39 @@ router.get("/pending", async (req, res) => {
   res.json(data);
 });
 
-// ADMIN: APPROVE
 router.post("/approve/:id", async (req, res) => {
-  const { error } = await supabase
-    .from("papers")
-    .update({
-      status: "approved",
-      approved: true
-    })
-    .eq("id", req.params.id)
-    .eq("status", "pending");
+  try {
+    const { id } = req.params;
 
-  if (error) {
-    return res.status(500).json({ error: error.message });
+    await db.query(
+      "UPDATE papers SET approved = TRUE WHERE id = $1",
+      [id]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to approve" });
   }
-
-  res.json({ success: true });
 });
 
 // ADMIN: REJECT (mark as rejected)
 router.post("/reject/:id", async (req, res) => {
-  const paperId = req.params.id;
+  try {
+    const { id } = req.params;
 
-  const { data, error } = await supabase
-    .from("papers")
-    .update({ approved: -1 })
-    .eq("id", paperId)
-    .select()
-    .single();
+    await db.query(
+      "DELETE FROM papers WHERE id = $1",
+      [id]
+    );
 
-  if (error) {
-    console.error("Reject error:", error);
-    return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to reject" });
   }
-
-  if (!data) {
-    return res.status(404).json({ error: "Paper not found" });
-  }
-
-  res.json({ success: true });
 });
+
 
 
 /* ============================
