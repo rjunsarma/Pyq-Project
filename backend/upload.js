@@ -49,7 +49,7 @@ router.post("/", upload.single("paper"), async (req, res) => {
       .from("papers")
       .getPublicUrl(fileName);
 
-    // 2️⃣ Insert metadata into Supabase DB
+    // 2️⃣ INSERT METADATA INTO SUPABASE DB  ← THIS FIXES ADMIN PAGE
     const { error: dbError } = await supabase
       .from("papers")
       .insert({
