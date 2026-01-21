@@ -104,19 +104,25 @@ router.post("/approve/:id", async (req, res) => {
 
   res.json({ success: true });
 });
-// ADMIN: REJECT
+
+// ADMIN: REJECT (mark as rejected)
 router.post("/reject/:id", async (req, res) => {
-  const { error } = await supabase
+  const paperId = req.params.id;
+
+  const { data, error } = await supabase
     .from("papers")
-    .update({
-      status: "rejected",
-      approved: false
-    })
-    .eq("id", req.params.id)
-    .eq("status", "pending");
+    .update({ approved: -1 })
+    .eq("id", paperId)
+    .select()
+    .single();
 
   if (error) {
+    console.error("Reject error:", error);
     return res.status(500).json({ error: error.message });
+  }
+
+  if (!data) {
+    return res.status(404).json({ error: "Paper not found" });
   }
 
   res.json({ success: true });
