@@ -4,8 +4,17 @@ const path = require("path");
 const crypto = require("crypto");
 const sqlite3 = require("sqlite3").verbose();
 const fs = require("fs");
+const OpenAI = require("openai");
 
 const router = express.Router();
+
+/* ============================
+   OPENAI SETUP
+============================ */
+
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
 
 /* ============================
    DATABASE SETUP
@@ -31,32 +40,7 @@ CREATE TABLE IF NOT EXISTS papers (
 `);
 
 /* ============================
-   AUTO APPROVAL DECISION (AI-READY)
-============================ */
-
-function autoApproveDecision({ category, subject, year, semester, fileSize }) {
-    // ❌ Obvious bad data
-    if (!subject || subject.length < 3) return false;
-    if (!year || isNaN(year)) return false;
-
-    const allowedCategories = ["major", "minor", "sec", "vac", "mde"];
-
-    // ✅ Looks like a real academic paper
-    if (
-        allowedCategories.includes(category.toLowerCase()) &&
-        Number(semester) >= 1 &&
-        Number(semester) <= 8 &&
-        fileSize > 10 * 1024 &&               // >10KB
-        fileSize < 10 * 1024 * 1024           // <10MB
-    ) {
-        return true; // auto-approve
-    }
-
-    return false; // suspicious → admin review
-}
-
-/* ============================
-   MULTER CONFIG
+   UPLOADS DIRECTORY
 ============================ */
 
 const uploadsDir = path.join(__dirname, "uploads");
@@ -64,10 +48,68 @@ if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+/* ============================
+   AI AUTO-APPROVAL FUNCTION
+============================ */
+
+async function autoApproveDecisionAI({
+    category,
+    subject,
+    year,
+    semester,
+    fileSize,
+    fileName
+}) {
+    try {
+        const prompt = `
+You are moderating uploads for a university question paper website.
+
+Decide if this looks like a genuine academic question paper.
+
+Rules:
+- Approve ONLY if confident
+- If unsure, respond PENDING
+- Never reject outright
+
+Metadata:
+Category: ${category}
+Subject: ${subject}
+Semester: ${semester}
+Year: ${year}
+File name: ${fileName}
+File size: ${fileSize} bytes
+
+Reply with exactly ONE word:
+APPROVE or PENDING
+        `.trim();
+
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: "You are a strict academic moderator." },
+                { role: "user", content: prompt }
+            ],
+            temperature: 0
+        });
+
+        const decision = response.choices[0].message.content.trim();
+        return decision === "APPROVE";
+
+    } catch (err) {
+        console.error("OpenAI error — defaulting to PENDING:", err.message);
+        return false; // SAFE fallback
+    }
+}
+
+/* ============================
+   MULTER CONFIG
+============================ */
+
 const storage = multer.diskStorage({
     destination: uploadsDir,
     filename: (req, file, cb) => {
-        const uniqueName = crypto.randomUUID() + path.extname(file.originalname);
+        const uniqueName =
+            crypto.randomUUID() + path.extname(file.originalname);
         cb(null, uniqueName);
     }
 });
@@ -86,25 +128,26 @@ const upload = multer({
    USER UPLOAD ROUTE
 ============================ */
 
-router.post("/", upload.single("paper"), (req, res) => {
+router.post("/", upload.single("paper"), async (req, res) => {
     const { category, subject, semester, year } = req.body;
 
     if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const autoApproved = autoApproveDecision({
+    const autoApproved = await autoApproveDecisionAI({
         category,
         subject,
         year,
         semester,
-        fileSize: req.file.size
+        fileSize: req.file.size,
+        fileName: req.file.originalname
     });
 
     db.run(
         `INSERT INTO papers
-         (id, category, subject, semester, year, filePath, approved)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (id, category, subject, semester, year, filePath, approved)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
             crypto.randomUUID(),
             category,
