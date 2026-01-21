@@ -8,10 +8,9 @@ const router = express.Router();
 /* ============================
    MULTER (MEMORY)
 ============================ */
-
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (file.mimetype !== "application/pdf") {
       return cb(new Error("Only PDF files allowed"));
@@ -23,7 +22,6 @@ const upload = multer({
 /* ============================
    USER UPLOAD (PENDING)
 ============================ */
-
 router.post("/", upload.single("paper"), async (req, res) => {
   try {
     const { category, subject, semester, year } = req.body;
@@ -34,7 +32,7 @@ router.post("/", upload.single("paper"), async (req, res) => {
 
     const fileName = `${crypto.randomUUID()}.pdf`;
 
-    // 1️⃣ Upload PDF to Supabase Storage
+    // Upload to Supabase Storage
     const { error: uploadError } = await supabase.storage
       .from("papers")
       .upload(fileName, req.file.buffer, {
@@ -49,7 +47,7 @@ router.post("/", upload.single("paper"), async (req, res) => {
       .from("papers")
       .getPublicUrl(fileName);
 
-    // 2️⃣ INSERT METADATA INTO SUPABASE DB  ← THIS FIXES ADMIN PAGE
+    // Insert metadata
     const { error: dbError } = await supabase
       .from("papers")
       .insert({
@@ -58,6 +56,7 @@ router.post("/", upload.single("paper"), async (req, res) => {
         semester,
         year,
         file_url: data.publicUrl,
+        status: "pending",
         approved: false
       });
 
@@ -66,7 +65,6 @@ router.post("/", upload.single("paper"), async (req, res) => {
     }
 
     res.json({ success: true });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Upload failed" });
@@ -76,61 +74,71 @@ router.post("/", upload.single("paper"), async (req, res) => {
 /* ============================
    ADMIN: GET PENDING
 ============================ */
-
 router.get("/pending", async (req, res) => {
   const { data, error } = await supabase
     .from("papers")
     .select("*")
-    .eq("approved", false);
+    .eq("status", "pending");
 
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
 });
 
+/* ============================
+   ADMIN: APPROVE
+============================ */
 router.post("/approve/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+  const { error } = await supabase
+    .from("papers")
+    .update({
+      status: "approved",
+      approved: true
+    })
+    .eq("id", req.params.id)
+    .eq("status", "pending");
 
-    await db.query(
-      "UPDATE papers SET approved = TRUE WHERE id = $1",
-      [id]
-    );
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to approve" });
-  }
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
 });
 
-// ADMIN: REJECT (mark as rejected)
+/* ============================
+   ADMIN: REJECT
+============================ */
 router.post("/reject/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
+  const { error } = await supabase
+    .from("papers")
+    .update({
+      status: "rejected",
+      approved: false
+    })
+    .eq("id", req.params.id)
+    .eq("status", "pending");
 
-    await db.query(
-      "DELETE FROM papers WHERE id = $1",
-      [id]
-    );
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to reject" });
-  }
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
 });
 
+/* ============================
+   ADMIN: DELETE
+============================ */
+router.delete("/delete/:id", async (req, res) => {
+  const { error } = await supabase
+    .from("papers")
+    .delete()
+    .eq("id", req.params.id);
 
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
 
 /* ============================
    PUBLIC: GET APPROVED
 ============================ */
-
 router.get("/approved", async (req, res) => {
   const { data, error } = await supabase
     .from("papers")
     .select("*")
-    .eq("approved", true)
+    .eq("status", "approved")
     .order("created_at", { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
