@@ -1,169 +1,208 @@
 const express = require("express");
 const multer = require("multer");
+const path = require("path");
 const crypto = require("crypto");
-const supabase = require("./supabaseClient");
+const sqlite3 = require("sqlite3").verbose();
+const fs = require("fs");
 
 const router = express.Router();
 
 /* ============================
-   MULTER (MEMORY)
+   DATABASE SETUP
 ============================ */
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype !== "application/pdf") {
-      return cb(new Error("Only PDF files allowed"));
+
+const dbDir = path.join(__dirname, "db");
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+
+const db = new sqlite3.Database(path.join(dbDir, "database.sqlite"));
+
+db.run(`
+CREATE TABLE IF NOT EXISTS papers (
+    id TEXT PRIMARY KEY,
+    category TEXT,
+    subject TEXT,
+    semester INTEGER,
+    year TEXT,
+    filePath TEXT,
+    approved INTEGER DEFAULT 0
+)
+`);
+
+/* ============================
+   AUTO APPROVAL DECISION (AI-READY)
+============================ */
+
+function autoApproveDecision({ category, subject, year, semester, fileSize }) {
+    // ❌ Obvious bad data
+    if (!subject || subject.length < 3) return false;
+    if (!year || isNaN(year)) return false;
+
+    const allowedCategories = ["major", "minor", "sec", "vac", "mde"];
+
+    // ✅ Looks like a real academic paper
+    if (
+        allowedCategories.includes(category.toLowerCase()) &&
+        Number(semester) >= 1 &&
+        Number(semester) <= 8 &&
+        fileSize > 10 * 1024 &&               // >10KB
+        fileSize < 10 * 1024 * 1024           // <10MB
+    ) {
+        return true; // auto-approve
     }
-    cb(null, true);
-  }
+
+    return false; // suspicious → admin review
+}
+
+/* ============================
+   MULTER CONFIG
+============================ */
+
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+    destination: uploadsDir,
+    filename: (req, file, cb) => {
+        const uniqueName = crypto.randomUUID() + path.extname(file.originalname);
+        cb(null, uniqueName);
+    }
+});
+
+const upload = multer({
+    storage,
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype !== "application/pdf") {
+            return cb(new Error("Only PDF files allowed"));
+        }
+        cb(null, true);
+    }
 });
 
 /* ============================
-   USER UPLOAD (PENDING)
+   USER UPLOAD ROUTE
 ============================ */
-router.post("/", upload.single("paper"), async (req, res) => {
-  try {
+
+router.post("/", upload.single("paper"), (req, res) => {
     const { category, subject, semester, year } = req.body;
 
     if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+        return res.status(400).json({ error: "No file uploaded" });
     }
 
-    /* 🔒 BLOCK DUPLICATE UPLOADS */
-    const { data: existing, error: dupError } = await supabase
-      .from("papers")
-      .select("id")
-      .eq("category", category)
-      .eq("subject", subject)
-      .eq("semester", semester)
-      .eq("year", year)
-      .in("status", ["pending", "approved"])
-      .limit(1);
-
-    if (dupError) {
-      return res.status(500).json({ error: dupError.message });
-    }
-
-    if (existing && existing.length > 0) {
-      return res.status(400).json({
-        error: "This paper already exists or is pending approval"
-      });
-    }
-
-    const fileName = `${crypto.randomUUID()}.pdf`;
-
-    /* Upload PDF to Supabase Storage */
-    const { error: uploadError } = await supabase.storage
-      .from("papers")
-      .upload(fileName, req.file.buffer, {
-        contentType: "application/pdf"
-      });
-
-    if (uploadError) {
-      return res.status(500).json({ error: uploadError.message });
-    }
-
-    const { data } = supabase.storage
-      .from("papers")
-      .getPublicUrl(fileName);
-
-    /* Insert metadata */
-    const { error: dbError } = await supabase
-      .from("papers")
-      .insert({
+    const autoApproved = autoApproveDecision({
         category,
         subject,
-        semester,
         year,
-        file_url: data.publicUrl,
-        status: "pending",
-        approved: false
-      });
+        semester,
+        fileSize: req.file.size
+    });
 
-    if (dbError) {
-      return res.status(500).json({ error: dbError.message });
-    }
+    db.run(
+        `INSERT INTO papers
+         (id, category, subject, semester, year, filePath, approved)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+            crypto.randomUUID(),
+            category,
+            subject,
+            semester,
+            year,
+            req.file.path,
+            autoApproved ? 1 : 0
+        ],
+        err => {
+            if (err) {
+                return res.status(500).json({ error: err.message });
+            }
 
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Upload failed" });
-  }
+            res.json({
+                success: true,
+                autoApproved
+            });
+        }
+    );
 });
 
 /* ============================
-   ADMIN: GET PENDING
+   ADMIN ROUTES
 ============================ */
-router.get("/pending", async (req, res) => {
-  const { data, error } = await supabase
-    .from("papers")
-    .select("*")
-    .eq("status", "pending");
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+router.get("/pending", (req, res) => {
+    db.all("SELECT * FROM papers WHERE approved = 0", [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+router.post("/approve/:id", (req, res) => {
+    db.run(
+        "UPDATE papers SET approved = 1 WHERE id = ?",
+        [req.params.id],
+        err => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        }
+    );
+});
+
+router.post("/reject/:id", (req, res) => {
+    db.run(
+        "UPDATE papers SET approved = -1 WHERE id = ?",
+        [req.params.id],
+        err => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true });
+        }
+    );
+});
+
+router.delete("/delete/:id", (req, res) => {
+    db.get(
+        "SELECT filePath FROM papers WHERE id = ?",
+        [req.params.id],
+        (err, row) => {
+            if (err || !row) {
+                return res.status(404).json({ error: "Paper not found" });
+            }
+
+            db.run(
+                "DELETE FROM papers WHERE id = ?",
+                [req.params.id],
+                err => {
+                    if (err) return res.status(500).json({ error: err.message });
+
+                    fs.unlink(row.filePath, () => {
+                        res.json({ success: true });
+                    });
+                }
+            );
+        }
+    );
 });
 
 /* ============================
-   ADMIN: APPROVE
+   PUBLIC ROUTE
 ============================ */
-router.post("/approve/:id", async (req, res) => {
-  const { error } = await supabase
-    .from("papers")
-    .update({
-      status: "approved",
-      approved: true
-    })
-    .eq("id", req.params.id)
-    .eq("status", "pending");
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true });
-});
+router.get("/approved", (req, res) => {
+    db.all("SELECT * FROM papers WHERE approved = 1", [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
 
-/* ============================
-   ADMIN: REJECT
-============================ */
-router.post("/reject/:id", async (req, res) => {
-  const { error } = await supabase
-    .from("papers")
-    .update({
-      status: "rejected",
-      approved: false
-    })
-    .eq("id", req.params.id)
-    .eq("status", "pending");
+        const formatted = rows.map(paper => ({
+            id: paper.id,
+            category: paper.category,
+            subject: paper.subject,
+            semester: paper.semester,
+            year: paper.year,
+            fileUrl: `/uploads/${path.basename(paper.filePath)}`
+        }));
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true });
-});
-
-/* ============================
-   ADMIN: DELETE (APPROVED)
-============================ */
-router.delete("/delete/:id", async (req, res) => {
-  const { error } = await supabase
-    .from("papers")
-    .delete()
-    .eq("id", req.params.id);
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true });
-});
-
-/* ============================
-   PUBLIC: GET APPROVED
-============================ */
-router.get("/approved", async (req, res) => {
-  const { data, error } = await supabase
-    .from("papers")
-    .select("*")
-    .eq("status", "approved")
-    .order("created_at", { ascending: false });
-
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+        res.json(formatted);
+    });
 });
 
 module.exports = router;
