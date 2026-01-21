@@ -87,19 +87,54 @@ router.get("/pending", async (req, res) => {
   res.json(data);
 });
 
-/* ============================
-   ADMIN: APPROVE
-============================ */
-
+// ADMIN: APPROVE
 router.post("/approve/:id", async (req, res) => {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("papers")
-    .update({ approved: true })
-    .eq("id", req.params.id);
+    .update({
+      status: "approved",
+      approved: true
+    })
+    .eq("id", req.params.id)
+    .eq("status", "pending")   // 🔒 prevents duplicate approval
+    .select()
+    .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  if (!data) {
+    return res.status(400).json({ error: "Paper already processed" });
+  }
+
   res.json({ success: true });
 });
+
+// ADMIN: REJECT
+router.post("/reject/:id", async (req, res) => {
+  const { data, error } = await supabase
+    .from("papers")
+    .update({
+      status: "rejected",
+      approved: false
+    })
+    .eq("id", req.params.id)
+    .eq("status", "pending")   // 🔒 only pending can be rejected
+    .select()
+    .single();
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  if (!data) {
+    return res.status(400).json({ error: "Paper already processed" });
+  }
+
+  res.json({ success: true });
+});
+
 
 /* ============================
    PUBLIC: GET APPROVED
