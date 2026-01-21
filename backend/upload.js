@@ -4,17 +4,9 @@ const path = require("path");
 const crypto = require("crypto");
 const sqlite3 = require("sqlite3").verbose();
 const fs = require("fs");
-const OpenAI = require("openai");
+const pdfParse = require("pdf-parse");
 
 const router = express.Router();
-
-/* ============================
-   OPENAI SETUP
-============================ */
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
 
 /* ============================
    DATABASE SETUP
@@ -49,55 +41,44 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 /* ============================
-   AI AUTO-APPROVAL FUNCTION
+   PDF AUTO-APPROVAL LOGIC
 ============================ */
 
-async function autoApproveDecisionAI({
-    category,
-    subject,
-    year,
-    semester,
-    fileSize,
-    fileName
-}) {
+async function autoApproveFromPDF(filePath) {
     try {
-        const prompt = `
-You are moderating uploads for a university question paper website.
+        const dataBuffer = fs.readFileSync(filePath);
+        const data = await pdfParse(dataBuffer);
 
-Decide if this looks like a genuine academic question paper.
+        // Use only first part of text (fast + safe)
+        const text = data.text.toLowerCase().slice(0, 1500);
 
-Rules:
-- Approve ONLY if confident
-- If unsure, respond PENDING
-- Never reject outright
+        const keywords = [
+            "time",
+            "full marks",
+            "maximum marks",
+            "duration",
+            "semester",
+            "examination",
+            "exam",
+            "question paper",
+            "paper code",
+            "university",
+            "instructions"
+        ];
 
-Metadata:
-Category: ${category}
-Subject: ${subject}
-Semester: ${semester}
-Year: ${year}
-File name: ${fileName}
-File size: ${fileSize} bytes
+        let matches = 0;
+        for (const word of keywords) {
+            if (text.includes(word)) {
+                matches++;
+            }
+        }
 
-Reply with exactly ONE word:
-APPROVE or PENDING
-        `.trim();
-
-        const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                { role: "system", content: "You are a strict academic moderator." },
-                { role: "user", content: prompt }
-            ],
-            temperature: 0
-        });
-
-        const decision = response.choices[0].message.content.trim();
-        return decision === "APPROVE";
+        // ✅ approve if at least 2 academic signals found
+        return matches >= 2;
 
     } catch (err) {
-        console.error("OpenAI error — defaulting to PENDING:", err.message);
-        return false; // SAFE fallback
+        console.error("PDF parse failed, keeping pending:", err.message);
+        return false; // safe fallback
     }
 }
 
@@ -108,8 +89,7 @@ APPROVE or PENDING
 const storage = multer.diskStorage({
     destination: uploadsDir,
     filename: (req, file, cb) => {
-        const uniqueName =
-            crypto.randomUUID() + path.extname(file.originalname);
+        const uniqueName = crypto.randomUUID() + path.extname(file.originalname);
         cb(null, uniqueName);
     }
 });
@@ -135,37 +115,46 @@ router.post("/", upload.single("paper"), async (req, res) => {
         return res.status(400).json({ error: "No file uploaded" });
     }
 
-    const autoApproved = await autoApproveDecisionAI({
-        category,
-        subject,
-        year,
-        semester,
-        fileSize: req.file.size,
-        fileName: req.file.originalname
-    });
-
-    db.run(
-        `INSERT INTO papers
-        (id, category, subject, semester, year, filePath, approved)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-            crypto.randomUUID(),
-            category,
-            subject,
-            semester,
-            year,
-            req.file.path,
-            autoApproved ? 1 : 0
-        ],
-        err => {
-            if (err) {
-                return res.status(500).json({ error: err.message });
+    // 🔒 DUPLICATE CHECK
+    db.get(
+        `SELECT id FROM papers
+         WHERE category = ? AND subject = ? AND semester = ? AND year = ?`,
+        [category, subject, semester, year],
+        async (err, existing) => {
+            if (existing) {
+                fs.unlink(req.file.path, () => {});
+                return res.status(409).json({
+                    error: "This paper already exists."
+                });
             }
 
-            res.json({
-                success: true,
-                autoApproved
-            });
+            // 🔍 AUTO-APPROVAL FROM PDF CONTENT
+            const autoApproved = await autoApproveFromPDF(req.file.path);
+
+            db.run(
+                `INSERT INTO papers
+                (id, category, subject, semester, year, filePath, approved)
+                VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    crypto.randomUUID(),
+                    category,
+                    subject,
+                    semester,
+                    year,
+                    req.file.path,
+                    autoApproved ? 1 : 0
+                ],
+                err => {
+                    if (err) {
+                        return res.status(500).json({ error: err.message });
+                    }
+
+                    res.json({
+                        success: true,
+                        autoApproved
+                    });
+                }
+            );
         }
     );
 });
