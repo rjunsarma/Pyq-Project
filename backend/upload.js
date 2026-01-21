@@ -10,7 +10,7 @@ const router = express.Router();
 ============================ */
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
   fileFilter: (req, file, cb) => {
     if (file.mimetype !== "application/pdf") {
       return cb(new Error("Only PDF files allowed"));
@@ -30,9 +30,30 @@ router.post("/", upload.single("paper"), async (req, res) => {
       return res.status(400).json({ error: "No file uploaded" });
     }
 
+    /* 🔒 BLOCK DUPLICATE UPLOADS */
+    const { data: existing, error: dupError } = await supabase
+      .from("papers")
+      .select("id")
+      .eq("category", category)
+      .eq("subject", subject)
+      .eq("semester", semester)
+      .eq("year", year)
+      .in("status", ["pending", "approved"])
+      .limit(1);
+
+    if (dupError) {
+      return res.status(500).json({ error: dupError.message });
+    }
+
+    if (existing && existing.length > 0) {
+      return res.status(400).json({
+        error: "This paper already exists or is pending approval"
+      });
+    }
+
     const fileName = `${crypto.randomUUID()}.pdf`;
 
-    // Upload to Supabase Storage
+    /* Upload PDF to Supabase Storage */
     const { error: uploadError } = await supabase.storage
       .from("papers")
       .upload(fileName, req.file.buffer, {
@@ -47,7 +68,7 @@ router.post("/", upload.single("paper"), async (req, res) => {
       .from("papers")
       .getPublicUrl(fileName);
 
-    // Insert metadata
+    /* Insert metadata */
     const { error: dbError } = await supabase
       .from("papers")
       .insert({
@@ -119,7 +140,7 @@ router.post("/reject/:id", async (req, res) => {
 });
 
 /* ============================
-   ADMIN: DELETE
+   ADMIN: DELETE (APPROVED)
 ============================ */
 router.delete("/delete/:id", async (req, res) => {
   const { error } = await supabase
