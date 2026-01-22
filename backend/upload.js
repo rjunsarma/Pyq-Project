@@ -1,55 +1,33 @@
 const express = require("express");
 const multer = require("multer");
-const path = require("path");
 const crypto = require("crypto");
-const sqlite3 = require("sqlite3").verbose();
 const fs = require("fs");
 const pdfParse = require("pdf-parse");
+const supabase = require("./supabaseClient");
 
 const router = express.Router();
 
 /* ============================
-   DATABASE SETUP
+   MULTER (MEMORY STORAGE)
 ============================ */
 
-const dbDir = path.join(__dirname, "db");
-if (!fs.existsSync(dbDir)) {
-    fs.mkdirSync(dbDir, { recursive: true });
-}
-
-const db = new sqlite3.Database(path.join(dbDir, "database.sqlite"));
-
-db.run(`
-CREATE TABLE IF NOT EXISTS papers (
-    id TEXT PRIMARY KEY,
-    category TEXT,
-    subject TEXT,
-    semester INTEGER,
-    year TEXT,
-    filePath TEXT,
-    approved INTEGER DEFAULT 0
-)
-`);
+const upload = multer({
+    storage: multer.memoryStorage(),
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype !== "application/pdf") {
+            return cb(new Error("Only PDF files allowed"));
+        }
+        cb(null, true);
+    }
+});
 
 /* ============================
-   UPLOADS DIRECTORY
+   PDF AUTO-APPROVAL
 ============================ */
 
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
-
-/* ============================
-   PDF AUTO-APPROVAL LOGIC
-============================ */
-
-async function autoApproveFromPDF(filePath) {
+async function autoApproveFromPDF(buffer) {
     try {
-        const dataBuffer = fs.readFileSync(filePath);
-        const data = await pdfParse(dataBuffer);
-
-        // Use only first part of text (fast + safe)
+        const data = await pdfParse(buffer);
         const text = data.text.toLowerCase().slice(0, 1500);
 
         const keywords = [
@@ -68,41 +46,15 @@ async function autoApproveFromPDF(filePath) {
 
         let matches = 0;
         for (const word of keywords) {
-            if (text.includes(word)) {
-                matches++;
-            }
+            if (text.includes(word)) matches++;
         }
 
-        // ✅ approve if at least 2 academic signals found
         return matches >= 2;
-
     } catch (err) {
-        console.error("PDF parse failed, keeping pending:", err.message);
-        return false; // safe fallback
+        console.error("PDF parse failed:", err.message);
+        return false;
     }
 }
-
-/* ============================
-   MULTER CONFIG
-============================ */
-
-const storage = multer.diskStorage({
-    destination: uploadsDir,
-    filename: (req, file, cb) => {
-        const uniqueName = crypto.randomUUID() + path.extname(file.originalname);
-        cb(null, uniqueName);
-    }
-});
-
-const upload = multer({
-    storage,
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype !== "application/pdf") {
-            return cb(new Error("Only PDF files allowed"));
-        }
-        cb(null, true);
-    }
-});
 
 /* ============================
    USER UPLOAD ROUTE
@@ -115,126 +67,137 @@ router.post("/", upload.single("paper"), async (req, res) => {
         return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // 🔒 DUPLICATE CHECK
-    db.get(
-        `SELECT id FROM papers
-         WHERE category = ? AND subject = ? AND semester = ? AND year = ?`,
-        [category, subject, semester, year],
-        async (err, existing) => {
-            if (existing) {
-                fs.unlink(req.file.path, () => {});
-                return res.status(409).json({
-                    error: "This paper already exists."
-                });
-            }
+    // 🔒 DUPLICATE CHECK (Supabase)
+    const { data: existing } = await supabase
+        .from("papers")
+        .select("id")
+        .eq("category", category)
+        .eq("subject", subject)
+        .eq("semester", semester)
+        .eq("year", year)
+        .single();
 
-            // 🔍 AUTO-APPROVAL FROM PDF CONTENT
-            const autoApproved = await autoApproveFromPDF(req.file.path);
+    if (existing) {
+        return res.status(409).json({
+            error: "This paper already exists."
+        });
+    }
 
-            db.run(
-                `INSERT INTO papers
-                (id, category, subject, semester, year, filePath, approved)
-                VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    crypto.randomUUID(),
-                    category,
-                    subject,
-                    semester,
-                    year,
-                    req.file.path,
-                    autoApproved ? 1 : 0
-                ],
-                err => {
-                    if (err) {
-                        return res.status(500).json({ error: err.message });
-                    }
+    // 🔍 AUTO APPROVAL
+    const autoApproved = await autoApproveFromPDF(req.file.buffer);
 
-                    res.json({
-                        success: true,
-                        autoApproved
-                    });
-                }
-            );
-        }
-    );
+    // 📤 UPLOAD TO SUPABASE STORAGE
+    const fileName = `${crypto.randomUUID()}.pdf`;
+
+    const { error: uploadError } = await supabase.storage
+        .from("papers")
+        .upload(fileName, req.file.buffer, {
+            contentType: "application/pdf"
+        });
+
+    if (uploadError) {
+        return res.status(500).json({ error: uploadError.message });
+    }
+
+    const { data: publicUrl } = supabase.storage
+        .from("papers")
+        .getPublicUrl(fileName);
+
+    // 🗄 INSERT INTO DB
+    const { error: insertError } = await supabase
+        .from("papers")
+        .insert([{
+            category,
+            subject,
+            semester,
+            year,
+            file_url: publicUrl.publicUrl,
+            approved: autoApproved ? 1 : 0
+        }]);
+
+    if (insertError) {
+        return res.status(500).json({ error: insertError.message });
+    }
+
+    res.json({
+        success: true,
+        autoApproved
+    });
 });
 
 /* ============================
    ADMIN ROUTES
 ============================ */
 
-router.get("/pending", (req, res) => {
-    db.all("SELECT * FROM papers WHERE approved = 0", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows);
-    });
+router.get("/pending", async (req, res) => {
+    const { data, error } = await supabase
+        .from("papers")
+        .select("*")
+        .eq("approved", 0);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
 });
 
-router.post("/approve/:id", (req, res) => {
-    db.run(
-        "UPDATE papers SET approved = 1 WHERE id = ?",
-        [req.params.id],
-        err => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        }
-    );
+router.post("/approve/:id", async (req, res) => {
+    const { error } = await supabase
+        .from("papers")
+        .update({ approved: 1 })
+        .eq("id", req.params.id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
 });
 
-router.post("/reject/:id", (req, res) => {
-    db.run(
-        "UPDATE papers SET approved = -1 WHERE id = ?",
-        [req.params.id],
-        err => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true });
-        }
-    );
+router.post("/reject/:id", async (req, res) => {
+    const { error } = await supabase
+        .from("papers")
+        .update({ approved: -1 })
+        .eq("id", req.params.id);
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
 });
 
-router.delete("/delete/:id", (req, res) => {
-    db.get(
-        "SELECT filePath FROM papers WHERE id = ?",
-        [req.params.id],
-        (err, row) => {
-            if (err || !row) {
-                return res.status(404).json({ error: "Paper not found" });
-            }
+router.delete("/delete/:id", async (req, res) => {
+    const { data } = await supabase
+        .from("papers")
+        .select("file_url")
+        .eq("id", req.params.id)
+        .single();
 
-            db.run(
-                "DELETE FROM papers WHERE id = ?",
-                [req.params.id],
-                err => {
-                    if (err) return res.status(500).json({ error: err.message });
+    if (!data) return res.status(404).json({ error: "Not found" });
 
-                    fs.unlink(row.filePath, () => {
-                        res.json({ success: true });
-                    });
-                }
-            );
-        }
-    );
+    const fileName = data.file_url.split("/").pop();
+
+    await supabase.storage.from("papers").remove([fileName]);
+    await supabase.from("papers").delete().eq("id", req.params.id);
+
+    res.json({ success: true });
 });
 
 /* ============================
    PUBLIC ROUTE
 ============================ */
 
-router.get("/approved", (req, res) => {
-    db.all("SELECT * FROM papers WHERE approved = 1", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
+router.get("/approved", async (req, res) => {
+    const { data, error } = await supabase
+        .from("papers")
+        .select("*")
+        .eq("approved", 1);
 
-        const formatted = rows.map(paper => ({
-            id: paper.id,
-            category: paper.category,
-            subject: paper.subject,
-            semester: paper.semester,
-            year: paper.year,
-            fileUrl: `/uploads/${path.basename(paper.filePath)}`
-        }));
+    if (error) return res.status(500).json({ error: error.message });
 
-        res.json(formatted);
-    });
+    const formatted = data.map(paper => ({
+        id: paper.id,
+        category: paper.category,
+        subject: paper.subject,
+        semester: paper.semester,
+        year: paper.year,
+        fileUrl: paper.file_url
+    }));
+
+    res.json(formatted);
 });
 
 module.exports = router;
