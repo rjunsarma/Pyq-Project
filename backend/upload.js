@@ -1,11 +1,24 @@
 const express = require("express");
 const multer = require("multer");
 const crypto = require("crypto");
-const fs = require("fs");
 const pdfParse = require("pdf-parse");
 const supabase = require("./supabaseClient");
 
 const router = express.Router();
+
+/* ============================
+   ADMIN AUTH MIDDLEWARE
+============================ */
+
+function adminAuth(req, res, next) {
+    const adminKey = req.headers["x-admin-key"];
+
+    if (!adminKey || adminKey !== process.env.ADMIN_KEY) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    next();
+}
 
 /* ============================
    MULTER (MEMORY STORAGE)
@@ -57,7 +70,7 @@ async function autoApproveFromPDF(buffer) {
 }
 
 /* ============================
-   USER UPLOAD ROUTE
+   USER UPLOAD ROUTE (PUBLIC)
 ============================ */
 
 router.post("/", upload.single("paper"), async (req, res) => {
@@ -67,7 +80,7 @@ router.post("/", upload.single("paper"), async (req, res) => {
         return res.status(400).json({ error: "No file uploaded" });
     }
 
-    // 🔒 DUPLICATE CHECK (Supabase)
+    // 🔒 DUPLICATE CHECK
     const { data: existing } = await supabase
         .from("papers")
         .select("id")
@@ -126,10 +139,10 @@ router.post("/", upload.single("paper"), async (req, res) => {
 });
 
 /* ============================
-   ADMIN ROUTES
+   ADMIN ROUTES (PROTECTED)
 ============================ */
 
-router.get("/pending", async (req, res) => {
+router.get("/pending", adminAuth, async (req, res) => {
     const { data, error } = await supabase
         .from("papers")
         .select("*")
@@ -139,7 +152,7 @@ router.get("/pending", async (req, res) => {
     res.json(data);
 });
 
-router.post("/approve/:id", async (req, res) => {
+router.post("/approve/:id", adminAuth, async (req, res) => {
     const { error } = await supabase
         .from("papers")
         .update({ approved: 1 })
@@ -149,7 +162,7 @@ router.post("/approve/:id", async (req, res) => {
     res.json({ success: true });
 });
 
-router.post("/reject/:id", async (req, res) => {
+router.post("/reject/:id", adminAuth, async (req, res) => {
     const { error } = await supabase
         .from("papers")
         .update({ approved: -1 })
@@ -159,7 +172,7 @@ router.post("/reject/:id", async (req, res) => {
     res.json({ success: true });
 });
 
-router.delete("/delete/:id", async (req, res) => {
+router.delete("/delete/:id", adminAuth, async (req, res) => {
     const { data } = await supabase
         .from("papers")
         .select("file_url")
