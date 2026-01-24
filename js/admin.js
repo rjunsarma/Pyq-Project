@@ -1,13 +1,24 @@
 const container = document.getElementById("papers");
 
 /* ================================
+   ADMIN KEY (CHANGE IF NEEDED)
+================================ */
+
+const ADMIN_KEY = "pyq_admin_9f3KxQm82LzP@2026";
+
+/* ================================
    LOAD PENDING
 ================================ */
 async function loadPending() {
     setActive("pending-btn");
     document.getElementById("admin-heading").innerText = "Pending Uploads";
 
-    const res = await fetch("/api/upload/pending");
+    const res = await fetch("/api/upload/pending", {
+        headers: {
+            "x-admin-key": ADMIN_KEY
+        }
+    });
+
     const data = await res.json();
     renderList(data, "pending");
 }
@@ -16,7 +27,12 @@ async function loadApproved() {
     setActive("approved-btn");
     document.getElementById("admin-heading").innerText = "Approved Uploads";
 
-    const res = await fetch("/api/upload/approved");
+    const res = await fetch("/api/upload/approved", {
+        headers: {
+            "x-admin-key": ADMIN_KEY
+        }
+    });
+
     const data = await res.json();
     renderList(data, "approved");
 }
@@ -64,7 +80,13 @@ function renderList(data, mode) {
    ACTIONS
 ================================ */
 async function approvePaper(id) {
-    const res = await fetch(`/api/upload/approve/${id}`, { method: "POST" });
+    const res = await fetch(`/api/upload/approve/${id}`, {
+        method: "POST",
+        headers: {
+            "x-admin-key": ADMIN_KEY
+        }
+    });
+
     const result = await res.json();
 
     if (!res.ok) {
@@ -77,7 +99,13 @@ async function approvePaper(id) {
 }
 
 async function rejectPaper(id) {
-    const res = await fetch(`/api/upload/reject/${id}`, { method: "POST" });
+    const res = await fetch(`/api/upload/reject/${id}`, {
+        method: "POST",
+        headers: {
+            "x-admin-key": ADMIN_KEY
+        }
+    });
+
     const result = await res.json();
 
     if (!res.ok) {
@@ -93,7 +121,13 @@ async function deletePaper(id) {
     const ok = confirm("Delete this paper permanently?\nThis cannot be undone.");
     if (!ok) return;
 
-    const res = await fetch(`/api/upload/delete/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/upload/delete/${id}`, {
+        method: "DELETE",
+        headers: {
+            "x-admin-key": ADMIN_KEY
+        }
+    });
+
     const result = await res.json();
 
     if (!res.ok) {
